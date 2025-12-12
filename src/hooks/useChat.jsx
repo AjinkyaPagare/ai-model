@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
-const backendUrl = "https://systematically-chemurgical-marquitta.ngrok-free.dev"; // Updated backend URL
+const backendUrl = "https://d45a4702dd89.ngrok-free.app"; // Updated backend URL
 
 // Improved lipsync generation function with accurate phoneme mapping
 const generateAccurateLipsync = (text) => {
@@ -170,8 +170,13 @@ export const ChatProvider = ({ children }) => {
           // Don't set Content-Type header - let the browser set it for FormData
         },
         mode: 'cors',
-        credentials: 'include'
+        credentials: 'omit'
       });
+
+      // Check if the endpoint exists
+      if (response.status === 404) {
+        throw new Error('Backend voice service is not available (404 Not Found). Please check if the backend server is running and the endpoint is correctly configured.');
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -180,14 +185,14 @@ export const ChatProvider = ({ children }) => {
       // Get response as blob first to check content type
       const blob = await response.blob();
       const contentType = blob.type;
-      
+    
       console.log('Response content type:', contentType);
 
       // Handle JSON response
       if (contentType.includes('application/json')) {
         const responseText = await blob.text();
         console.log('JSON response:', responseText);
-        
+      
         let data;
         try {
           data = JSON.parse(responseText);
@@ -200,7 +205,7 @@ export const ChatProvider = ({ children }) => {
             throw new Error('Invalid JSON response from server');
           }
         }
-        
+      
         // Handle different response formats
         if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
           setMessages(data.messages);
@@ -247,7 +252,9 @@ export const ChatProvider = ({ children }) => {
       let errorMessage = "I'm having trouble understanding. Could you try again?";
       
       if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-        errorMessage = "I can't connect to the server. Please check your connection.";
+        errorMessage = "I can't connect to the server. Please check your connection and make sure the backend service is running.";
+      } else if (error.message.includes('404')) {
+        errorMessage = "The voice service is currently unavailable. Please check if the backend server is properly configured and running.";
       } else if (error.message.includes('429') || error.message.includes('rate limit')) {
         errorMessage = "I'm processing too many requests. Please wait a moment and try again.";
       } else if (error.message.includes('401') || error.message.includes('403')) {
