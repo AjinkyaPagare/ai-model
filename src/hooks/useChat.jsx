@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
-const backendUrl = "https://d45a4702dd89.ngrok-free.app"; // Updated backend URL
+const backendUrl = "https://82f73133b0b1.ngrok-free.app"; // Updated backend URL
 
 // Improved lipsync generation function with accurate phoneme mapping
 const generateAccurateLipsync = (text) => {
