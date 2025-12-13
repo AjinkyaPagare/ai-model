@@ -1,18 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
-const getBackendBaseUrl = () => {
-  const envUrl = import.meta.env.VITE_BACKEND_URL;
-  if (envUrl && typeof envUrl === "string") {
-    return envUrl.replace(/\/$/, "");
-  }
-  if (import.meta.env.DEV) {
-    return "http://localhost:8005";
-  }
-  if (typeof window !== "undefined") {
-    return window.location.origin;
-  }
-  return "";
-};
+const getBackendBaseUrl = () => "https://059c3f4df85b.ngrok-free.app";
+
 
 const buildApiUrl = (path) => {
   const base = getBackendBaseUrl();
