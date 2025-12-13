@@ -1,98 +1,202 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
-const backendUrl = "https://82f73133b0b1.ngrok-free.app"; // Updated backend URL
+const getBackendBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_BACKEND_URL;
+  if (envUrl && typeof envUrl === "string") {
+    return envUrl.replace(/\/$/, "");
+  }
+  if (import.meta.env.DEV) {
+    return "http://localhost:8005";
+  }
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  return "";
+};
 
-// Improved lipsync generation function with accurate phoneme mapping
-const generateAccurateLipsync = (text) => {
+const buildApiUrl = (path) => {
+  const base = getBackendBaseUrl();
+  if (base) {
+    return `${base}${path}`;
+  }
+  return `/api${path}`;
+};
+
+// Professional phoneme-based lipsync generation with coarticulation
+const generateProfessionalLipsync = (text) => {
+  // Split text into phonemes (simplified for this example)
+  // In a real implementation, this would come from audio analysis
   const words = text.toLowerCase().split(' ').filter(word => word.length > 0);
   const mouthCues = [];
   let currentTime = 0;
 
-  // Enhanced phoneme to viseme mapping based on English phonetics
-  const phonemeMap = {
-    // Vowels - open mouth shapes
-    'a': 'A', 'e': 'E', 'i': 'I', 'o': 'O', 'u': 'U',
-    // Bilabial consonants - closed lips
+  // Professional viseme set based on Disney/Apple standards
+  const visemeMap = {
+    // Vowels - strong mouth shapes
+    'aa': 'A', 'ah': 'A', 'a': 'A',      // father, hot, cat
+    'eh': 'E', 'ae': 'E', 'e': 'E',      // get, bat, bed
+    'ih': 'I', 'i': 'I',                 // sit, see
+    'oh': 'O', 'o': 'O',                 // got, boot
+    'uh': 'U', 'u': 'U',                 // put, foot
+    
+    // Bilabials - closed lips
     'b': 'B', 'p': 'B', 'm': 'B',
-    // Labiodental consonants - teeth on lip
+    
+    // Labiodentals - upper teeth on lower lip
     'f': 'F', 'v': 'F',
-    // Dental/fricative consonants - tongue behind teeth
-    'th': 'H', 's': 'H', 'z': 'H', 'sh': 'H', 'zh': 'H',
-    // Alveolar consonants - tongue tip on alveolar ridge
-    't': 'H', 'd': 'H', 'n': 'H', 'l': 'X', 'r': 'X',
-    // Velar consonants - back of tongue
-    'k': 'H', 'g': 'H', 'ng': 'H',
-    // Palatal consonants - middle of tongue
-    'ch': 'H', 'j': 'H', 'y': 'X',
-    // Glottal consonants
-    'h': 'X', 'w': 'X', 'q': 'X',
-    'default': 'X'
+    
+    // Interdentals - tongue between teeth
+    'th': 'H',                           // thin, this
+    
+    // Alveolars - tongue tip on alveolar ridge
+    's': 'H', 'z': 'H', 't': 'H', 'd': 'H', 'n': 'H', 'l': 'H', 'r': 'H',
+    
+    // Post-alveolars - tongue cupped
+    'sh': 'H', 'ch': 'H', 'jh': 'H', 'zh': 'H',
+    
+    // Velars - back of tongue raised
+    'k': 'G', 'g': 'G', 'ng': 'G',
+    
+    // Glides - transitional sounds
+    'w': 'X', 'y': 'X',
+    
+    // Silence/rest
+    'sil': 'X'
   };
 
-  words.forEach((word, index) => {
-    let dominantPhoneme = 'default';
-    let visemeIntensity = 1.0;
+  // Coarticulation rules - how adjacent phonemes influence each other
+  const coarticulationRules = {
+    'B': ['viseme_PP', 'viseme_kk'],      // Bilabials: tight lips, slight jaw closure
+    'F': ['viseme_FF', 'viseme_TH'],      // Labiodentals: upper teeth on lower lip
+    'H': ['viseme_TH', 'viseme_FF'],      // Interdentals/Alveolars: tongue position variety
+    'G': ['viseme_kk', 'viseme_TH'],      // Velars: back of tongue raised
+    'A': ['viseme_AA', 'viseme_PP'],      // Open vowels: jaw dropped
+    'E': ['viseme_O', 'viseme_FF'],       // Mid vowels: moderate mouth opening
+    'I': ['viseme_I', 'viseme_kk'],       // High front vowels: tongue forward
+    'O': ['viseme_O', 'viseme_PP'],       // Rounded vowels: lips rounded
+    'U': ['viseme_U', 'viseme_kk'],       // High back vowels: lips rounded, tongue back
+    'X': ['viseme_PP', 'viseme_kk']       // Rest/silence: neutral position
+  };
 
-    // Analyze word for phoneme patterns
-    if (word.includes('th')) {
-      dominantPhoneme = 'th';
-    } else if (word.includes('sh')) {
-      dominantPhoneme = 'sh';
-    } else if (word.includes('ch')) {
-      dominantPhoneme = 'ch';
-    } else if (word.includes('ng')) {
-      dominantPhoneme = 'ng';
-    } else if (/[aeiou]/.test(word)) {
-      // Find the most prominent vowel
-      const vowels = word.match(/[aeiou]/g);
-      if (vowels && vowels.length > 0) {
-        // Use the first vowel as dominant
-        dominantPhoneme = vowels[0];
+  words.forEach((word, wordIndex) => {
+    // Convert word to approximate phonemes (in practice, this would come from audio analysis)
+    const phonemes = convertWordToPhonemes(word);
+    
+    phonemes.forEach((phoneme, phonemeIndex) => {
+      const visemeType = visemeMap[phoneme] || 'X';
+      
+      // Base duration calculation
+      let baseDuration = 0.15; // Default for consonants
+      
+      // Adjust duration based on phoneme type
+      if (['A', 'E', 'I', 'O', 'U'].includes(visemeType)) {
+        baseDuration = 0.25; // Longer for vowels
+      } else if (['B', 'P', 'M', 'F', 'V'].includes(visemeType)) {
+        baseDuration = 0.1; // Shorter for stops/fricatives
       }
-    } else if (/[bpm]/.test(word)) {
-      dominantPhoneme = 'b';
-      visemeIntensity = 0.9; // Slightly less intense for plosives
-    } else if (/[fv]/.test(word)) {
-      dominantPhoneme = 'f';
-    } else if (/[td]/.test(word)) {
-      dominantPhoneme = 't';
-      visemeIntensity = 0.8;
-    } else if (/[kg]/.test(word)) {
-      dominantPhoneme = 'k';
-      visemeIntensity = 0.8;
-    } else if (/[lrwy]/.test(word)) {
-      dominantPhoneme = 'l';
-    } else if (/[nz]/.test(word)) {
-      dominantPhoneme = 'n';
-    }
-
-    const viseme = phonemeMap[dominantPhoneme] || phonemeMap['default'];
-
-    // Calculate duration based on word length and type
-    let baseDuration = Math.max(0.15, Math.min(0.6, word.length * 0.12));
-
-    // Adjust duration for word type
-    if (dominantPhoneme === 'default' || /[bptdkg]/.test(dominantPhoneme)) {
-      baseDuration *= 0.8; // Shorter for plosives
-    } else if (/[aeiou]/.test(dominantPhoneme)) {
-      baseDuration *= 1.2; // Longer for vowels
-    }
-
-    // Add small pause between words for natural rhythm
-    if (index > 0) {
-      currentTime += 0.05;
-    }
-
-    mouthCues.push({
-      start: currentTime,
-      end: currentTime + baseDuration,
-      value: viseme
+      
+      // Apply coarticulation effects based on surrounding phonemes
+      const prevPhoneme = phonemeIndex > 0 ? phonemes[phonemeIndex - 1] : 
+                         wordIndex > 0 ? convertWordToPhonemes(words[wordIndex - 1]).pop() : 'sil';
+      const nextPhoneme = phonemeIndex < phonemes.length - 1 ? phonemes[phonemeIndex + 1] : 
+                         wordIndex < words.length - 1 ? convertWordToPhonemes(words[wordIndex + 1])[0] : 'sil';
+      
+      // Anticipatory timing - slightly advance transitions
+      const anticipation = 0.02;
+      
+      mouthCues.push({
+        start: currentTime - anticipation,
+        end: currentTime + baseDuration,
+        value: visemeType,
+        phoneme: phoneme,
+        prevPhoneme: prevPhoneme,
+        nextPhoneme: nextPhoneme
+      });
+      
+      currentTime += baseDuration;
+      
+      // Add slight pause between phonemes for natural rhythm
+      if (phonemeIndex < phonemes.length - 1) {
+        currentTime += 0.03;
+      }
     });
-
-    currentTime += baseDuration;
+    
+    // Add pause between words
+    if (wordIndex < words.length - 1) {
+      currentTime += 0.1;
+    }
   });
 
-  return { mouthCues };
+  const totalDuration = currentTime;
+  return { mouthCues, duration: totalDuration };
+};
+
+const generateAccurateLipsync = (text) => {
+  return generateProfessionalLipsync(text);
+};
+
+// Helper function to convert words to approximate phonemes
+const convertWordToPhonemes = (word) => {
+  // This is a simplified implementation - in reality, this would use a phoneme dictionary
+  // or be derived from actual audio analysis
+  
+  // Handle common phoneme patterns
+  const phonemePatterns = [
+    { pattern: /tion/g, replacement: ['t', 'sh', 'n'] },
+    { pattern: /sion/g, replacement: ['sh', 'n'] },
+    { pattern: /ough/g, replacement: ['ah', 'f'] },
+    { pattern: /ight/g, replacement: ['ah', 't'] },
+    { pattern: /eau/g, replacement: ['o'] },
+    { pattern: /ing/g, replacement: ['ih', 'ng'] },
+    { pattern: /th/g, replacement: ['th'] },
+    { pattern: /sh/g, replacement: ['sh'] },
+    { pattern: /ch/g, replacement: ['ch'] },
+    { pattern: /ph/g, replacement: ['f'] },
+    { pattern: /qu/g, replacement: ['k', 'w'] },
+    { pattern: /ck/g, replacement: ['k'] },
+    { pattern: /ng/g, replacement: ['ng'] },
+  ];
+  
+  // Apply patterns
+  let phonemes = [word]; // Start with whole word
+  
+  phonemePatterns.forEach(({ pattern, replacement }) => {
+    const newPhonemes = [];
+    phonemes.forEach(phoneme => {
+      if (pattern.test(phoneme)) {
+        const parts = phoneme.split(pattern);
+        for (let i = 0; i < parts.length - 1; i++) {
+          newPhonemes.push(parts[i]);
+          newPhonemes.push(...replacement);
+        }
+        newPhonemes.push(parts[parts.length - 1]);
+      } else {
+        newPhonemes.push(phoneme);
+      }
+    });
+    phonemes = newPhonemes.filter(p => p.length > 0);
+  });
+  
+  // Convert remaining letters to basic phonemes
+  const result = [];
+  phonemes.forEach(phoneme => {
+    if (phoneme.length === 1) {
+      // Map single letters to basic phonemes
+      const letterMap = {
+        'a': 'ae', 'e': 'eh', 'i': 'ih', 'o': 'ao', 'u': 'ah',
+        'b': 'b', 'c': 'k', 'd': 'd', 'f': 'f', 'g': 'g',
+        'h': 'hh', 'j': 'jh', 'k': 'k', 'l': 'l', 'm': 'm',
+        'n': 'n', 'p': 'p', 'q': 'k', 'r': 'r', 's': 's',
+        't': 't', 'v': 'v', 'w': 'w', 'x': 'ks', 'y': 'y', 'z': 'z'
+      };
+      result.push(letterMap[phoneme] || 'ah');
+    } else if (phoneme.length > 1) {
+      // For multi-letter segments, use the first letter's phoneme
+      result.push(convertWordToPhonemes(phoneme.charAt(0))[0]);
+    }
+  });
+  
+  return result;
 };
 
 const ChatContext = createContext();
@@ -163,7 +267,7 @@ export const ChatProvider = ({ children }) => {
       formData.append('audio', audioBlob, 'audio.webm');
 
       // Call voice pipeline endpoint which returns full message structure
-      const response = await fetch(`${backendUrl}/voice/pipeline`, {
+      const response = await fetch(buildApiUrl("/voice/pipeline"), {
         method: 'POST',
         body: formData,
         headers: {
@@ -208,7 +312,12 @@ export const ChatProvider = ({ children }) => {
       
         // Handle different response formats
         if (data.messages && Array.isArray(data.messages) && data.messages.length > 0) {
-          setMessages(data.messages);
+          // Validate lipsync data in messages
+          const validatedMessages = data.messages.map(msg => ({
+            ...msg,
+            lipsync: msg.lipsync || generateAccurateLipsync(msg.text || '')
+          }));
+          setMessages(validatedMessages);
         } else if (data.text !== undefined || data.audio !== undefined) {
           const message = {
             text: data.text || '',
@@ -225,15 +334,24 @@ export const ChatProvider = ({ children }) => {
       // Handle audio response (backend returns audio directly)
       else if (contentType.includes('audio/') || contentType.includes('application/octet-stream')) {
         console.log('Received audio response');
+
+        const transcriptionHeader = response.headers.get('X-Transcription') || '';
+        const aiReplyHeader = response.headers.get('X-AI-Response') || '';
+        const emotionHeader = response.headers.get('X-Emotion') || 'neutral';
+
+        const transcription = transcriptionHeader ? decodeURIComponent(transcriptionHeader) : '';
+        const aiReply = aiReplyHeader ? decodeURIComponent(aiReplyHeader) : 'I have processed your request';
+
         // Convert blob to base64
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64Audio = reader.result.split(',')[1];
           const message = {
-            text: 'I have processed your request',
+            text: aiReply,
+            transcript: transcription,
             audio: base64Audio,
-            lipsync: generateAccurateLipsync('I have processed your request'),
-            facialExpression: 'smile',
+            lipsync: generateAccurateLipsync(aiReply),
+            facialExpression: emotionHeader,
             animation: 'Talking_0'
           };
           setMessages([message]);
@@ -285,16 +403,59 @@ export const ChatProvider = ({ children }) => {
     const audio = new Audio(`data:audio/wav;base64,${base64Audio}`);
     audioRef.current = audio;
     
-    audio.onended = () => {
-      onMessagePlayed();
-    };
-    
+    // Force update the context to provide the new audio reference
+    setCurrentAudioRef(audio);
+
+    // Prepare Web Audio analyser for real-time lipsync if supported
+    try {
+      if (typeof window !== 'undefined' && window.AudioContext) {
+        // Clean up any previous analyser to avoid node leaks
+        cleanupAnalyser(currentAnalyser);
+
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const audioContext = new AudioCtx();
+        const source = audioContext.createMediaElementSource(audio);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        analyser.connect(audioContext.destination);
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        const analyserBundle = { analyser, audioContext, source, dataArray };
+        setCurrentAnalyser(analyserBundle);
+
+        if (audioContext.state === 'suspended') {
+          audioContext.resume().catch((error) => {
+            console.warn('Failed to resume audio context', error);
+          });
+        }
+
+        audio.onended = () => {
+          cleanupAnalyser(analyserBundle);
+          setCurrentAnalyser(null);
+          onMessagePlayed();
+        };
+      } else {
+        audio.onended = () => {
+          onMessagePlayed();
+        };
+      }
+    } catch (error) {
+      console.warn('Error creating audio analyser:', error);
+      audio.onended = () => {
+        onMessagePlayed();
+      };
+    }
+
     audio.play().catch(error => {
       console.error('Error playing audio:', error);
+      cleanupAnalyser(currentAnalyser);
+      setCurrentAnalyser(null);
       onMessagePlayed(); // Move to next message even if audio fails
     });
   };
-
+  
+  const [currentAudioRef, setCurrentAudioRef] = useState(null);
   const clearHistory = () => {
     setConversationHistory([]);
   };
@@ -304,6 +465,28 @@ export const ChatProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [cameraZoomed, setCameraZoomed] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
+  const [currentAnalyser, setCurrentAnalyser] = useState(null);
+
+  const cleanupAnalyser = (bundle) => {
+    if (!bundle) return;
+    try {
+      bundle.source?.disconnect();
+    } catch (err) {
+      console.warn('Error disconnecting audio source', err);
+    }
+    try {
+      bundle.analyser?.disconnect();
+    } catch (err) {
+      console.warn('Error disconnecting analyser', err);
+    }
+    try {
+      if (bundle.audioContext?.state !== 'closed') {
+        bundle.audioContext?.close();
+      }
+    } catch (err) {
+      console.warn('Error closing audio context', err);
+    }
+  };
 
   const onMessagePlayed = () => {
     setMessages((messages) => messages.slice(1));
@@ -353,7 +536,8 @@ export const ChatProvider = ({ children }) => {
         autoListen,
         startRecording,
         stopRecording,
-        currentAudio: audioRef.current // Provide current audio for lip-sync timing
+        currentAudio: currentAudioRef, // Provide current audio for lip-sync timing
+        currentAnalyser
       }}
     >
       {children}

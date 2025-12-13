@@ -102,6 +102,9 @@ const corresponding = {
   G: "viseme_FF",
   H: "viseme_TH",
   X: "viseme_PP",
+  I: "viseme_I",
+  O: "viseme_O",
+  U: "viseme_U",
 };
 
 let setupMode = false;
@@ -115,7 +118,7 @@ export function Avatar(props) {
     }
   );
 
-  const { message, onMessagePlayed, currentAudio } = useChat();
+  const { message, onMessagePlayed, currentAudio, currentAnalyser } = useChat();
 
   const [lipsync, setLipsync] = useState();
 
@@ -228,6 +231,7 @@ export function Avatar(props) {
   const [winkLeft, setWinkLeft] = useState(false);
   const [winkRight, setWinkRight] = useState(false);
   const [facialExpression, setFacialExpression] = useState("");
+  const audioEnergyRef = useRef(0);
   
   useFrame(() => {
     // Only run animation logic if model is loaded
@@ -249,110 +253,292 @@ export function Avatar(props) {
     lerpMorphTarget("eyeBlinkLeft", blink || winkLeft ? 1 : 0, 0.5);
     lerpMorphTarget("eyeBlinkRight", blink || winkRight ? 1 : 0, 0.5);
 
-    // ENHANCED LIPSYNC - Maximum mouth activity during voice playback
+    // PROFESSIONAL LIP-SYNC WITH COARTICULATION
     if (setupMode || !message || !lipsync || !currentAudio) {
+      // Reset all morph targets when not in use
+      Object.values(corresponding).forEach((value) => {
+        lerpMorphTarget(value, 0, 0.15);
+      });
       return;
     }
 
+    // Update real-time audio amplitude from Web Audio analyser
+    if (currentAnalyser?.analyser && currentAnalyser?.dataArray) {
+      try {
+        currentAnalyser.analyser.getByteTimeDomainData(currentAnalyser.dataArray);
+        let sumSquares = 0;
+        for (let i = 0; i < currentAnalyser.dataArray.length; i++) {
+          const value = (currentAnalyser.dataArray[i] - 128) / 128;
+          sumSquares += value * value;
+        }
+        const rms = Math.sqrt(sumSquares / currentAnalyser.dataArray.length);
+        const normalized = Math.min(rms * 3, 1); // Boost energy slightly
+        audioEnergyRef.current = audioEnergyRef.current * 0.7 + normalized * 0.3;
+      } catch (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Audio analyser processing error:', error);
+        }
+      }
+    } else {
+      audioEnergyRef.current *= 0.92;
+    }
+
+    const audioEnergy = audioEnergyRef.current;
+
     const currentAudioTime = currentAudio.currentTime;
     const audioDuration = currentAudio.duration || 1;
-    const appliedMorphTargets = [];
+    const lastCueEnd = lipsync?.duration && lipsync.duration > 0
+      ? lipsync.duration
+      : (lipsync.mouthCues?.length ? lipsync.mouthCues[lipsync.mouthCues.length - 1].end || 0 : 0);
+    const durationScale = lastCueEnd > 0 ? audioDuration / lastCueEnd : 1;
     
-    // Calculate total lipsync duration and scale to match audio
-    const totalLipsyncDuration = lipsync.mouthCues.length > 0 
-      ? lipsync.mouthCues[lipsync.mouthCues.length - 1].end 
-      : 1;
+    // Track applied morph targets for smooth transitions
+    const appliedMorphTargets = new Set();
     
-    const timeScale = audioDuration / totalLipsyncDuration;
-    
-    // Check current and next mouth cues for maximum activity
-    for (let i = 0; i < lipsync.mouthCues.length; i++) {
-      const mouthCue = lipsync.mouthCues[i];
-      const nextCue = lipsync.mouthCues[i + 1];
-      
-      // Scale times to match audio duration
-      const scaledStart = mouthCue.start * timeScale;
-      const scaledEnd = mouthCue.end * timeScale;
-      
-      if (currentAudioTime >= scaledStart && currentAudioTime <= scaledEnd) {
-        const viseme = corresponding[mouthCue.value];
-        if (viseme) {
-          // Calculate intensity based on position in cue duration
-          const cueProgress = (currentAudioTime - scaledStart) / (scaledEnd - scaledStart);
-          
-          // MAXIMUM MOUTH MOVEMENT - Very strong and active
-          const intensity = 0.2 + (0.8 * Math.sin(cueProgress * Math.PI)); // 0.2 to 1.0 intensity
-          
-          appliedMorphTargets.push(viseme);
-          lerpMorphTarget(viseme, intensity, 0.8); // Fast response for instant sync
-          
-          // Add secondary mouth movement for more activity
-          if (mouthCue.value === 'A' || mouthCue.value === 'E' || mouthCue.value === 'I') {
-            // For vowels, add strong jaw opening
-            lerpMorphTarget('viseme_PP', intensity * 8, 0.5);
-            // Add additional mouth opening for vowels
-            lerpMorphTarget('viseme_AA', intensity * 0.6, 0.5);
-            // Show more teeth during vowel sounds
-            lerpMorphTarget('viseme_FF', intensity * 0.8, 0.5);
-          } else if (mouthCue.value === 'B' || mouthCue.value === 'F') {
-            // For consonants, add mouth closing
-            lerpMorphTarget('viseme_kk', intensity * 0.4, 0.5);
-            // Show maximum teeth for F sound
-            if (mouthCue.value === 'F') {
-              lerpMorphTarget('viseme_FF', intensity * 1.2, 0.5);
+    // Process mouth cues with coarticulation and anticipatory timing
+    if (lipsync.mouthCues && lipsync.mouthCues.length > 0) {
+      for (let i = 0; i < lipsync.mouthCues.length; i++) {
+        const mouthCue = lipsync.mouthCues[i];
+        const cueStart = (mouthCue.start ?? 0) * durationScale;
+        const cueEnd = (mouthCue.end ?? 0) * durationScale;
+        const effectiveStart = Math.max(cueStart, 0);
+        const effectiveEnd = Math.max(cueEnd, effectiveStart + 0.01);
+
+        // Check if we're in the right time window (with anticipation)
+        if (currentAudioTime >= effectiveStart && currentAudioTime <= effectiveEnd) {
+          const viseme = corresponding[mouthCue.value];
+          if (viseme) {
+            // Calculate precise interpolation factor within the cue
+            const progress = (currentAudioTime - effectiveStart) / (effectiveEnd - effectiveStart);
+            
+            // Apply easing function for natural acceleration/deceleration
+            const easedProgress = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+            
+            // Base intensity with natural variation
+            const baseIntensity = 0.7 + 0.3 * Math.sin(progress * Math.PI);
+            
+            // Apply coarticulation effects based on adjacent phonemes
+            let intensity = baseIntensity;
+            let transitionSpeed = 0.25;
+            
+            // Adjust for specific viseme types
+            switch (mouthCue.value) {
+              case 'A': // Open vowels
+                intensity = baseIntensity * 1.0;
+                transitionSpeed = 0.2;
+                break;
+              case 'E': // Mid vowels
+                intensity = baseIntensity * 0.85;
+                transitionSpeed = 0.25;
+                break;
+              case 'I': // High front vowels
+                intensity = baseIntensity * 0.7;
+                transitionSpeed = 0.3;
+                break;
+              case 'O': // Rounded vowels
+                intensity = baseIntensity * 0.9;
+                transitionSpeed = 0.22;
+                break;
+              case 'U': // High back vowels
+                intensity = baseIntensity * 0.8;
+                transitionSpeed = 0.28;
+                break;
+              case 'B': // Bilabials
+                intensity = baseIntensity * 0.95;
+                transitionSpeed = 0.15; // Faster for plosives
+                break;
+              case 'F': // Labiodentals
+                intensity = baseIntensity * 0.85;
+                transitionSpeed = 0.2;
+                break;
+              case 'H': // Inter/Aveolars
+                intensity = baseIntensity * 0.75;
+                transitionSpeed = 0.25;
+                break;
+              case 'X': // Rest/Silence
+                intensity = baseIntensity * 0.3;
+                transitionSpeed = 0.3;
+                break;
             }
-          } else if (mouthCue.value === 'O' || mouthCue.value === 'U') {
-            // For rounded vowels, add mouth rounding
-            lerpMorphTarget('viseme_O', intensity * 0.7, 0.5);
-            // Show teeth for rounded vowels
-            lerpMorphTarget('viseme_FF', intensity * 0.6, 0.5);
-          } else if (mouthCue.value === 'H' || mouthCue.value === 'X') {
-            // For fricatives and default, show more teeth
-            lerpMorphTarget('viseme_FF', intensity * 0.7, 0.5);
+            
+            // Apply real-time audio energy boost
+            const amplitudeBoost = 0.55 + audioEnergy * 0.9;
+            intensity = Math.min(intensity * amplitudeBoost, 1.0);
+
+            // Apply primary viseme
+            appliedMorphTargets.add(viseme);
+            lerpMorphTarget(viseme, intensity, transitionSpeed);
+            
+            // Apply coarticulation secondary morph targets
+            const coarticulationTargets = getCoarticulationTargets(mouthCue);
+            Object.entries(coarticulationTargets).forEach(([target, targetIntensity]) => {
+              appliedMorphTargets.add(target);
+              lerpMorphTarget(target, intensity * targetIntensity, transitionSpeed * 0.8);
+            });
+            
+            // Add subtle jaw movement for vowel sounds
+            if (['A', 'E', 'O', 'U'].includes(mouthCue.value)) {
+              lerpMorphTarget('jawOpen', intensity * 0.6, transitionSpeed);
+            }
+            
+            // Add cheek involvement for extreme expressions
+            if (intensity > 0.8) {
+              lerpMorphTarget('cheekSquintLeft', intensity * 0.3, transitionSpeed);
+              lerpMorphTarget('cheekSquintRight', intensity * 0.3, transitionSpeed);
+            }
           }
-          
-          // Add constant mouth movement during speech
-          lerpMorphTarget('viseme_TH', intensity * 0.3, 0.8);
-          // Always show more teeth during speech
-          lerpMorphTarget('viseme_FF', intensity * 0.5, 0.8);
+          break;
         }
-        break;
-      }
-      
-      // Pre-transition to next cue for ultra-smooth animation
-      if (nextCue && currentAudioTime > scaledEnd && currentAudioTime < nextCue.start * timeScale) {
-        const transitionProgress = (currentAudioTime - scaledEnd) / (nextCue.start * timeScale - scaledEnd);
-        const currentViseme = corresponding[mouthCue.value];
-        const nextViseme = corresponding[nextCue.value];
         
-        if (currentViseme && nextViseme) {
-          // Ultra-smooth transition between visemes
-          lerpMorphTarget(currentViseme, 1 - transitionProgress, 0.03);
-          lerpMorphTarget(nextViseme, transitionProgress, 0.03);
-          appliedMorphTargets.push(currentViseme, nextViseme);
-          
-          // Add micro-movements during transitions
-          const microIntensity = 0.2 + (0.1 * Math.sin(transitionProgress * Math.PI * 2));
-          lerpMorphTarget('viseme_PP', microIntensity, 0.05);
+        // Handle transitions between cues
+        if (i < lipsync.mouthCues.length - 1) {
+          const nextCue = lipsync.mouthCues[i + 1];
+          const currentEnd = (mouthCue.end ?? 0) * durationScale;
+          const nextStart = (nextCue.start ?? 0) * durationScale;
+          if (currentAudioTime > currentEnd && currentAudioTime < nextStart) {
+            // In transition period - blend between cues
+            const transitionProgress = (currentAudioTime - currentEnd) / Math.max(nextStart - currentEnd, 0.01);
+            
+            const currentViseme = corresponding[mouthCue.value];
+            const nextViseme = corresponding[nextCue.value];
+            
+            if (currentViseme && nextViseme) {
+              // Smooth transition between visemes
+              appliedMorphTargets.add(currentViseme);
+              appliedMorphTargets.add(nextViseme);
+              
+              lerpMorphTarget(currentViseme, 1 - transitionProgress, 0.15);
+              lerpMorphTarget(nextViseme, transitionProgress, 0.15);
+              
+              // Blend coarticulation effects during transition
+              const currentCoartTargets = getCoarticulationTargets(mouthCue);
+              const nextCoartTargets = getCoarticulationTargets(nextCue);
+              
+              // Apply blended coarticulation
+              const allTargets = new Set([
+                ...Object.keys(currentCoartTargets),
+                ...Object.keys(nextCoartTargets)
+              ]);
+              
+              allTargets.forEach(target => {
+                const currentIntensity = currentCoartTargets[target] || 0;
+                const nextIntensity = nextCoartTargets[target] || 0;
+                const blendedIntensity = currentIntensity * (1 - transitionProgress) + nextIntensity * transitionProgress;
+                
+                appliedMorphTargets.add(target);
+                lerpMorphTarget(target, blendedIntensity, 0.15);
+              });
+            }
+          }
         }
-        break;
       }
     }
 
-    // Keep mouth slightly active even between cues for natural look
-    if (appliedMorphTargets.length === 0 && currentAudioTime < audioDuration) {
-      // Slight mouth movement when no specific cue is active
-      const idleIntensity = 0.1 + (0.05 * Math.sin(currentAudioTime * 10));
-      lerpMorphTarget('viseme_PP', idleIntensity, 0.1);
+    // Natural mouth movement during speech (micro-expressions)
+    if (currentAudioTime < audioDuration) {
+      const microMovementIntensity = Math.max(audioEnergy * 0.65, 0.08 + 0.04 * Math.sin(currentAudioTime * 15));
+      lerpMorphTarget('jawOpen', microMovementIntensity * 0.9, 0.18);
+      lerpMorphTarget('viseme_PP', microMovementIntensity * 0.7, 0.15);
+      if (microMovementIntensity > 0.4) {
+        lerpMorphTarget('cheekSquintLeft', microMovementIntensity * 0.25, 0.2);
+        lerpMorphTarget('cheekSquintRight', microMovementIntensity * 0.25, 0.2);
+      }
     }
 
-    // Fade out unused visemes instantly for clean animation
+    // If analyser energy is high but no viseme active (e.g., heuristic miss), open jaw slightly
+    if (appliedMorphTargets.size === 0 && audioEnergy > 0.15) {
+      const fallbackIntensity = Math.min(audioEnergy * 0.85, 0.9);
+      lerpMorphTarget('jawOpen', fallbackIntensity, 0.2);
+      lerpMorphTarget('viseme_PP', fallbackIntensity * 0.65, 0.2);
+    }
+
+    // Fade out unused morph targets smoothly
     Object.values(corresponding).forEach((value) => {
-      if (!appliedMorphTargets.includes(value)) {
-        lerpMorphTarget(value, 0, 0.1); // Instant fade out
+      if (!appliedMorphTargets.has(value)) {
+        lerpMorphTarget(value, 0, 0.15);
       }
     });
   });
+
+// Helper function to calculate coarticulation targets
+const getCoarticulationTargets = (mouthCue) => {
+  const targets = {};
+  
+  // Base coarticulation based on viseme type
+  switch (mouthCue.value) {
+    case 'A': // AA - Wide open jaw
+      targets['viseme_AA'] = 0.8;
+      targets['viseme_PP'] = 0.4;
+      targets['jawOpen'] = 0.6;
+      break;
+    case 'E': // EH - Slightly open
+      targets['viseme_O'] = 0.6;
+      targets['viseme_FF'] = 0.4;
+      break;
+    case 'I': // IH - Tight
+      targets['viseme_I'] = 0.7;
+      targets['viseme_kk'] = 0.5;
+      break;
+    case 'O': // OH - Rounded
+      targets['viseme_O'] = 0.9;
+      targets['viseme_PP'] = 0.6;
+      break;
+    case 'U': // UH - Tight rounded
+      targets['viseme_U'] = 0.8;
+      targets['viseme_kk'] = 0.4;
+      break;
+    case 'B': // PP - Closed lips
+      targets['viseme_PP'] = 1.0;
+      targets['viseme_kk'] = 0.3;
+      break;
+    case 'F': // FF - Upper teeth on lower lip
+      targets['viseme_FF'] = 0.9;
+      targets['viseme_TH'] = 0.6;
+      break;
+    case 'H': // TH - Tongue between teeth
+      targets['viseme_TH'] = 0.8;
+      targets['viseme_FF'] = 0.5;
+      break;
+    case 'G': // KK - Back of tongue raised
+      targets['viseme_kk'] = 0.7;
+      targets['viseme_TH'] = 0.4;
+      break;
+  }
+  
+  // Influence from previous phoneme
+  if (mouthCue.prevPhoneme) {
+    // Carryover effects from previous sound
+    switch (mouthCue.prevPhoneme) {
+      case 'b':
+      case 'p':
+      case 'm':
+        targets['viseme_PP'] = (targets['viseme_PP'] || 0) + 0.2;
+        break;
+      case 'f':
+      case 'v':
+        targets['viseme_FF'] = (targets['viseme_FF'] || 0) + 0.2;
+        break;
+    }
+  }
+  
+  // Influence from next phoneme (anticipatory coarticulation)
+  if (mouthCue.nextPhoneme) {
+    // Prepare for upcoming sound
+    switch (mouthCue.nextPhoneme) {
+      case 'b':
+      case 'p':
+      case 'm':
+        targets['viseme_PP'] = (targets['viseme_PP'] || 0) + 0.15;
+        break;
+      case 'f':
+      case 'v':
+        targets['viseme_FF'] = (targets['viseme_FF'] || 0) + 0.15;
+        break;
+    }
+  }
+  
+  return targets;
+};
 
   useControls("FacialExpressions", {
     winkLeft: button(() => {
