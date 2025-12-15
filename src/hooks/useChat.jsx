@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
-const getBackendBaseUrl = () => "https://059c3f4df85b.ngrok-free.app";
+const getBackendBaseUrl = () => "http://127.0.0.1:8009";
 
 
 const buildApiUrl = (path) => {

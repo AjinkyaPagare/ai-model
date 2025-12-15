@@ -120,12 +120,35 @@ export function Avatar(props) {
 
   const { message, onMessagePlayed, currentAudio, currentAnalyser } = useChat();
 
+  // --- Force arms down on initial load ---
+  useEffect(() => {
+    if (!nodes?.Wolf3D_Head) return;
+    // These bone names are typical for Wolf3D avatars; adjust if needed
+    const leftUpperArm = nodes?.LeftArm;
+    const rightUpperArm = nodes?.RightArm;
+    const leftLowerArm = nodes?.LeftForeArm;
+    const rightLowerArm = nodes?.RightForeArm;
+    // Bring arms much closer and more naturally to body
+    if (rightUpperArm) {
+      leftUpperArm.rotation.z = 0.1; // arms straight down
+      leftUpperArm.rotation.y = 0.0;
+      leftUpperArm.rotation.x = 1.15; // natural shoulder drop
+    }
+    if (leftUpperArm) {
+      rightUpperArm.rotation.z = 0.0;
+      rightUpperArm.rotation.y = 0.0;
+      rightUpperArm.rotation.x = 1.25;
+    }
+    if (leftLowerArm) leftLowerArm.rotation.z = -0.0;
+    if (rightLowerArm) rightLowerArm.rotation.z = 0.0;
+  }, [nodes]);
+
   const [lipsync, setLipsync] = useState();
 
   useEffect(() => {
     console.log(message);
     if (!message) {
-      setAnimation("Idle");
+      setAnimation("Talking_0");
       return;
     }
     setAnimation(message.animation);
@@ -178,10 +201,12 @@ export function Avatar(props) {
       return;
     }
     
-    const newAnimation = filteredAnimations.find((a) => a.name === "Idle") 
-      ? "Idle" 
+    // Prefer 'Talking_0' if available, otherwise fallback to 'Idle' or first available
+    const newAnimation = filteredAnimations.find((a) => a.name === "Talking_0")
+      ? "Talking_0"
+      : filteredAnimations.find((a) => a.name === "Idle")
+      ? "Idle"
       : filteredAnimations[0]?.name || "";
-      
     setAnimation(newAnimation);
   }, [filteredAnimations, isModelLoaded, areAnimationsLoaded]);
 
