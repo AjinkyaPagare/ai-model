@@ -182,10 +182,16 @@ export function Avatar(props) {
       name.toLowerCase().includes('arm') || 
       name.toLowerCase().includes('hand') ||
       name.toLowerCase().includes('forearm') ||
-      name.toLowerCase().includes('shoulder')
+      name.toLowerCase().includes('shoulder') ||
+      name.toLowerCase().includes('wrist') ||
+      name.toLowerCase().includes('finger')
     );
     
     console.log("Arm/Hand bones found:", armHandBones);
+    
+    // Check if we have arm/hand bones
+    const hasArmHandBones = armHandBones.length > 0;
+    console.log("Model has arm/hand bones:", hasArmHandBones);
     
     // Filter animations to only include those with tracks for existing bones
     return animations.map(animation => {
@@ -212,12 +218,16 @@ export function Avatar(props) {
         // Check specifically for arm/hand tracks that were filtered out
         const armHandTracks = animation.tracks.filter(track => {
           const boneName = track.name.split('.')[0];
-          return boneName.toLowerCase().includes('arm') || boneName.toLowerCase().includes('hand');
+          return boneName.toLowerCase().includes('arm') || boneName.toLowerCase().includes('hand') ||
+                 boneName.toLowerCase().includes('forearm') || boneName.toLowerCase().includes('shoulder') ||
+                 boneName.toLowerCase().includes('wrist') || boneName.toLowerCase().includes('finger');
         });
         
         const validArmHandTracks = validTracks.filter(track => {
           const boneName = track.name.split('.')[0];
-          return boneName.toLowerCase().includes('arm') || boneName.toLowerCase().includes('hand');
+          return boneName.toLowerCase().includes('arm') || boneName.toLowerCase().includes('hand') ||
+                 boneName.toLowerCase().includes('forearm') || boneName.toLowerCase().includes('shoulder') ||
+                 boneName.toLowerCase().includes('wrist') || boneName.toLowerCase().includes('finger');
         });
         
         if (armHandTracks.length > validArmHandTracks.length) {
@@ -261,10 +271,18 @@ export function Avatar(props) {
       
       // Prefer animations with hand movements
       const talkingWithHands = availableTalkingAnimations.filter(a => {
-        return a.tracks?.some(track => 
+        const hasArmHandTracks = a.tracks?.some(track => 
           track.name.toLowerCase().includes('arm') || 
           track.name.toLowerCase().includes('hand')
         ) || false;
+        
+        console.log(`Checking animation ${a.name} for arm/hand tracks:`, {
+          trackCount: a.tracks?.length,
+          hasArmHandTracks,
+          trackNames: a.tracks?.map(t => t.name).slice(0, 10) // First 10 track names
+        });
+        
+        return hasArmHandTracks;
       });
       
       // Select the best talking animation
@@ -274,8 +292,18 @@ export function Avatar(props) {
                            "Talking_0";
                             
       console.log("Setting talking animation:", talkAnimation, {
-        availableTalking: availableTalkingAnimations.map(a => a.name),
-        withHands: talkingWithHands.map(a => a.name)
+        messageAnimation: message.animation,
+        hasTalkingWithHands: talkingWithHands.length > 0,
+        hasAvailableTalking: availableTalkingAnimations.length > 0,
+        talkingWithHandsNames: talkingWithHands.map(a => a.name),
+        availableTalkingNames: availableTalkingAnimations.map(a => a.name),
+        allFilteredAnimations: filteredAnimations.map(a => ({
+          name: a.name,
+          trackCount: a.tracks?.length,
+          hasArmTracks: a.tracks?.some(track => 
+            track.name.toLowerCase().includes('arm') || 
+            track.name.toLowerCase().includes('hand'))
+        }))
       });
       setAnimation(talkAnimation);
       
@@ -323,6 +351,10 @@ export function Avatar(props) {
       a.name.toLowerCase().includes('speak')
     );
     
+    // Look for Talking_0 animation
+    const talking0Anim = filteredAnimations.find(a => a.name === "Talking_0");
+    console.log("Found Talking_0 animation:", !!talking0Anim, talking0Anim?.name);
+    
     // Look for talking animations that have hand movements
     const talkingWithHands = talkingAnimations.filter(a => {
       // Check if the animation has arm/hand tracks
@@ -336,19 +368,30 @@ export function Avatar(props) {
     console.log("Talking animations with hand tracks:", talkingWithHands.map(a => a.name));
     
     // Log details of Talking_0 animation if it exists
-    const talking0Anim = filteredAnimations.find(a => a.name === "Talking_0");
     if (talking0Anim) {
+      const talking0HasArmHandTracks = talking0Anim.tracks?.some(track => 
+        track.name.toLowerCase().includes('arm') || 
+        track.name.toLowerCase().includes('hand') ||
+        track.name.toLowerCase().includes('forearm') ||
+        track.name.toLowerCase().includes('shoulder') ||
+        track.name.toLowerCase().includes('wrist') ||
+        track.name.toLowerCase().includes('finger')
+      ) || false;
+      
       console.log("Talking_0 animation details:", {
         name: talking0Anim.name,
         duration: talking0Anim.duration,
         tracks: talking0Anim.tracks?.length,
         trackNames: talking0Anim.tracks?.map(t => t.name.substring(0, t.name.indexOf('.'))),
+        hasArmHandTracks: talking0HasArmHandTracks,
         // Check specifically for arm/hand tracks
         armTracks: talking0Anim.tracks?.filter(t => 
           t.name.toLowerCase().includes('arm') || 
           t.name.toLowerCase().includes('hand') || 
           t.name.toLowerCase().includes('forearm') ||
-          t.name.toLowerCase().includes('shoulder')
+          t.name.toLowerCase().includes('shoulder') ||
+          t.name.toLowerCase().includes('wrist') ||
+          t.name.toLowerCase().includes('finger')
         ).map(t => t.name)
       });
     }
@@ -366,8 +409,14 @@ export function Avatar(props) {
       
       const talking0HasHands = talking0Anim && talking0Anim.tracks?.some(track => 
         track.name.toLowerCase().includes('arm') || 
-        track.name.toLowerCase().includes('hand')
+        track.name.toLowerCase().includes('hand') ||
+        track.name.toLowerCase().includes('forearm') ||
+        track.name.toLowerCase().includes('shoulder') ||
+        track.name.toLowerCase().includes('wrist') ||
+        track.name.toLowerCase().includes('finger')
       );
+      
+      console.log("Talking_0 has hand movements:", talking0HasHands);
       
       const newAnimation = (talking0HasHands && talking0Anim)
         ? "Talking_0"
@@ -383,7 +432,14 @@ export function Avatar(props) {
         ? "Idle"
         : filteredAnimations[0]?.name || "";
       
-      console.log("Selected initial animation:", newAnimation);
+      console.log("Selected initial animation:", newAnimation, {
+        talking0HasHands,
+        hasTalkingWithHands: talkingWithHands.length > 0,
+        hasTalkingAnimations: talkingAnimations.length > 0,
+        hasGestureAnimations: gestureAnimations.length > 0,
+        hasIdle: !!filteredAnimations.find((a) => a.name === "Idle"),
+        firstAnimation: filteredAnimations[0]?.name || "None"
+      });
       setAnimation(newAnimation);
     }
   }, [filteredAnimations, isModelLoaded, areAnimationsLoaded]);
@@ -421,7 +477,9 @@ export function Avatar(props) {
         hasAction: !!action,
         isRunning: action?.isRunning(),
         timeScale: action?.timeScale,
-        weight: action?.getEffectiveWeight()
+        weight: action?.getEffectiveWeight(),
+        clipDuration: action?.getClip()?.duration,
+        clipTracks: action?.getClip()?.tracks?.length
       });
       
       // For talking animations, increase the weight for more pronounced movements
