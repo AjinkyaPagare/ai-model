@@ -304,7 +304,8 @@ export const ChatProvider = ({ children }) => {
           // Validate lipsync data in messages
           const validatedMessages = data.messages.map(msg => ({
             ...msg,
-            lipsync: msg.lipsync || generateAccurateLipsync(msg.text || '')
+            lipsync: msg.lipsync || generateAccurateLipsync(msg.text || ''),
+            animation: msg.animation || 'Talking_0'
           }));
           setMessages(validatedMessages);
         } else if (data.text !== undefined || data.audio !== undefined) {
