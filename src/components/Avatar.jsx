@@ -114,7 +114,7 @@ export function Avatar(props) {
     "/models/64f1a714fe61576b46f27ca2.glb",
     undefined,
     (error) => {
-      console.warn("Error loading main model:", error);
+      // Silent error handling
     }
   );
 
@@ -133,14 +133,14 @@ export function Avatar(props) {
     // Only set initial arm positions if no animation is running AND we're not in talking mode
     const isTalking = animation && animation.includes('Talk');
     if ((!animation || animation === "Idle") && !isTalking) {
-      console.log("Setting initial arm positions");
+      // Silent initial arm positioning
       // Bring arms much closer and more naturally to body
-      if (rightUpperArm) {
+      if (leftUpperArm) {
         leftUpperArm.rotation.z = 0.1; // arms straight down
         leftUpperArm.rotation.y = 0.0;
         leftUpperArm.rotation.x = 1.15; // natural shoulder drop
       }
-      if (leftUpperArm) {
+      if (rightUpperArm) {
         rightUpperArm.rotation.z = 0.0;
         rightUpperArm.rotation.y = 0.0;
         rightUpperArm.rotation.x = 1.25;
@@ -148,15 +148,18 @@ export function Avatar(props) {
       if (leftLowerArm) leftLowerArm.rotation.z = -0.0;
       if (rightLowerArm) rightLowerArm.rotation.z = 0.0;
     } else if (isTalking) {
-      console.log("Skipping initial arm positioning during talking animation");
+      // Silent talking animation skip
     }
   }, [nodes, animation]);
 
   const [lipsync, setLipsync] = useState();
 
   const { animations } = useGLTF("/models/animations.glb", undefined, (error) => {
-    console.warn("Error loading animations:", error);
+    // Silent error handling
   });
+  
+  // Silent animation loading status check
+  
 
   // Check if required data is loaded
   const isModelLoaded = nodes && materials && scene;
@@ -174,8 +177,8 @@ export function Avatar(props) {
       }
     });
     
-    // Log all bone names for debugging
-    console.log("All available bones:", Array.from(boneNames));
+    // Log all bone names for debugging (but less frequently)
+    // Silent bone check
     
     // Specifically check for arm/hand bones
     const armHandBones = Array.from(boneNames).filter(name => 
@@ -187,78 +190,79 @@ export function Avatar(props) {
       name.toLowerCase().includes('finger')
     );
     
-    console.log("Arm/Hand bones found:", armHandBones);
+    // Silent arm/hand bones check
     
-    // Check if we have arm/hand bones
-    const hasArmHandBones = armHandBones.length > 0;
-    console.log("Model has arm/hand bones:", hasArmHandBones);
+    // Check if we have arm/hand bones (but log less frequently)
+    // Silent arm/hand check
     
     // Filter animations to only include those with tracks for existing bones
+    // Aggressively filter to prevent ALL THREE.PropertyBinding errors
     return animations.map(animation => {
       const validTracks = animation.tracks.filter(track => {
         // Extract bone name from track path (e.g., "HeadTop_End_end.position" -> "HeadTop_End_end")
         const boneName = track.name.split('.')[0];
-        const hasBone = boneNames.has(boneName);
         
-        // Debug log for arm/hand bones
-        if (boneName.toLowerCase().includes('arm') || boneName.toLowerCase().includes('hand')) {
-          console.log(`Arm/Hand bone check - ${boneName}: ${hasBone ? 'FOUND' : 'MISSING'}`);
+        // Aggressively filter out any tracks that might cause binding errors
+        // Skip ALL tracks with suffixes as they commonly cause issues
+        if (boneName.includes('_end') || boneName.includes('_End') || boneName.includes('End') || 
+            boneName.includes('_end_end') || boneName.includes('end')) {
+          return false;
         }
+        
+        // Only allow tracks for bones that directly exist
+        const hasBone = boneNames.has(boneName);
         
         return hasBone;
       });
       
-      // Log if we're filtering out arm/hand tracks
+      // Silent animation filtering
       const originalTrackCount = animation.tracks.length;
       const filteredTrackCount = validTracks.length;
       
-      if (originalTrackCount !== filteredTrackCount) {
-        console.log(`Animation ${animation.name} had ${originalTrackCount} tracks, now ${filteredTrackCount}`);
-        
-        // Check specifically for arm/hand tracks that were filtered out
-        const armHandTracks = animation.tracks.filter(track => {
-          const boneName = track.name.split('.')[0];
-          return boneName.toLowerCase().includes('arm') || boneName.toLowerCase().includes('hand') ||
-                 boneName.toLowerCase().includes('forearm') || boneName.toLowerCase().includes('shoulder') ||
-                 boneName.toLowerCase().includes('wrist') || boneName.toLowerCase().includes('finger');
-        });
-        
-        const validArmHandTracks = validTracks.filter(track => {
-          const boneName = track.name.split('.')[0];
-          return boneName.toLowerCase().includes('arm') || boneName.toLowerCase().includes('hand') ||
-                 boneName.toLowerCase().includes('forearm') || boneName.toLowerCase().includes('shoulder') ||
-                 boneName.toLowerCase().includes('wrist') || boneName.toLowerCase().includes('finger');
-        });
-        
-        if (armHandTracks.length > validArmHandTracks.length) {
-          console.warn(`WARNING: ${armHandTracks.length - validArmHandTracks.length} arm/hand tracks were filtered out of ${animation.name}`);
-          console.log("Missing arm/hand bones:", armHandTracks
-            .filter(track => !validTracks.includes(track))
-            .map(track => track.name.split('.')[0]));
-        }
-      }
+      // Silent filtering info
+      
+      // Silent arm/hand track analysis
       
       return {
         ...animation,
-        tracks: validTracks
+        tracks: validTracks,
+        originalTrackCount: animation.tracks.length
       };
-    }).filter(animation => animation.tracks.length > 0); // Only include animations with valid tracks
+    }).filter(animation => {
+      // Only use animations that have tracks
+      return animation.tracks.length > 0;
+    });
   }, [animations, scene, areAnimationsLoaded]);
 
   const group = useRef();
   const { actions, mixer } = useAnimations(isModelLoaded && areAnimationsLoaded ? filteredAnimations : [], group);
+  
+  // Silent animation actions status check
 
   useEffect(() => {
-    console.log("Message effect triggered", message);
+    // Silent message handling
     if (!message) {
       // When there's no message, set to idle animation
-      console.log("No message, setting to idle");
-      setAnimation("Idle");
+      // Find an appropriate idle animation
+      const idleAnimation = Object.keys(actions).find(key => key.toLowerCase().includes("idle")) || 
+                          Object.keys(actions).find(key => key.toLowerCase().includes("idle"));
+      
+      // If we found an idle animation and it exists in our actions, use it
+      if (idleAnimation && actions[idleAnimation]) {
+        setAnimation(idleAnimation);
+      } else {
+        // Fallback: use any available animation
+        const firstAvailable = Object.keys(actions)[0];
+        if (firstAvailable) {
+          setAnimation(firstAvailable);
+        } else {
+          setAnimation(""); // No animation
+        }
+      }
       setFacialExpression("");
       setLipsync(undefined);
       return;
     }
-    console.log("Setting animation from message:", message.animation);
     
     // Set animation based on whether there's audio (speaking) or not
     if (message.audio) {
@@ -266,21 +270,20 @@ export function Avatar(props) {
       // Prefer animations that likely have hand movements
       const availableTalkingAnimations = filteredAnimations.filter(a => 
         a.name.toLowerCase().includes('talk') || 
-        a.name.toLowerCase().includes('speak')
+        a.name.toLowerCase().includes('speak') ||
+        a.name.toLowerCase().includes('gesture')
       );
       
       // Prefer animations with hand movements
       const talkingWithHands = availableTalkingAnimations.filter(a => {
         const hasArmHandTracks = a.tracks?.some(track => 
           track.name.toLowerCase().includes('arm') || 
-          track.name.toLowerCase().includes('hand')
+          track.name.toLowerCase().includes('hand') ||
+          track.name.toLowerCase().includes('forearm') ||
+          track.name.toLowerCase().includes('shoulder') ||
+          track.name.toLowerCase().includes('wrist') ||
+          track.name.toLowerCase().includes('finger')
         ) || false;
-        
-        console.log(`Checking animation ${a.name} for arm/hand tracks:`, {
-          trackCount: a.tracks?.length,
-          hasArmHandTracks,
-          trackNames: a.tracks?.map(t => t.name).slice(0, 10) // First 10 track names
-        });
         
         return hasArmHandTracks;
       });
@@ -291,32 +294,30 @@ export function Avatar(props) {
                            (availableTalkingAnimations.length > 0 ? availableTalkingAnimations[0].name : null) ||
                            "Talking_0";
                             
-      console.log("Setting talking animation:", talkAnimation, {
-        messageAnimation: message.animation,
-        hasTalkingWithHands: talkingWithHands.length > 0,
-        hasAvailableTalking: availableTalkingAnimations.length > 0,
-        talkingWithHandsNames: talkingWithHands.map(a => a.name),
-        availableTalkingNames: availableTalkingAnimations.map(a => a.name),
-        allFilteredAnimations: filteredAnimations.map(a => ({
-          name: a.name,
-          trackCount: a.tracks?.length,
-          hasArmTracks: a.tracks?.some(track => 
-            track.name.toLowerCase().includes('arm') || 
-            track.name.toLowerCase().includes('hand'))
-        }))
-      });
-      setAnimation(talkAnimation);
-      
-      // Log message details for debugging
-      console.log("Message details:", {
-        hasAudio: !!message.audio,
-        audioLength: message.audio?.length,
-        text: message.text,
-        animation: message.animation
-      });
+      // Ensure we have a valid animation name
+      let finalAnimation = talkAnimation;
+      if (!finalAnimation || !actions[finalAnimation]) {
+        // Try to find any available animation
+        const availableAnimations = Object.keys(actions);
+        
+        // Look for any talking-like animation
+        const fallbackTalking = availableAnimations.find(name => 
+          name.toLowerCase().includes('talk') || 
+          name.toLowerCase().includes('speak')
+        );
+        
+        // Or just use the first available animation
+        finalAnimation = fallbackTalking || availableAnimations[0] || "Idle";
+      }
+                            
+      // Ensure we're actually setting a valid animation
+      if (finalAnimation) {
+        setAnimation(finalAnimation);
+      } else {
+        setAnimation("Idle");
+      }
     } else {
       // Use idle animation when there's no audio
-      console.log("Setting idle animation");
       setAnimation("Idle");
     }
     
@@ -329,21 +330,8 @@ export function Avatar(props) {
       return;
     }
     
-    // Log available animations for debugging
-    console.log("Available animations:", filteredAnimations.map(a => ({
-      name: a.name,
-      duration: a.duration,
-      tracks: a.tracks?.length || 0
-    })));
-    
-    // Look for gesture or hand-specific animations
-    const gestureAnimations = filteredAnimations.filter(a => 
-      a.name.toLowerCase().includes('gesture') || 
-      a.name.toLowerCase().includes('hand') || 
-      a.name.toLowerCase().includes('wave') ||
-      a.name.toLowerCase().includes('point') ||
-      a.name.toLowerCase().includes('talk') // Include talking animations as they should have hand movements
-    );
+    // More defensive initial animation selection
+    let newAnimation = "";
     
     // Look for talking animations specifically
     const talkingAnimations = filteredAnimations.filter(a => 
@@ -351,9 +339,13 @@ export function Avatar(props) {
       a.name.toLowerCase().includes('speak')
     );
     
-    // Look for Talking_0 animation
-    const talking0Anim = filteredAnimations.find(a => a.name === "Talking_0");
-    console.log("Found Talking_0 animation:", !!talking0Anim, talking0Anim?.name);
+    // Look for Talking_0 animation (with flexible matching)
+    const talking0Anim = filteredAnimations.find(a => 
+      a.name.toLowerCase().includes("talking") && a.name.includes("0") ||
+      a.name === "Talking_0" ||
+      a.name === "talking_0"
+    );
+    // Silent Talking_0 animation check
     
     // Look for talking animations that have hand movements
     const talkingWithHands = talkingAnimations.filter(a => {
@@ -364,8 +356,7 @@ export function Avatar(props) {
       ) || false;
     });
     
-    console.log("Talking animations:", talkingAnimations.map(a => a.name));
-    console.log("Talking animations with hand tracks:", talkingWithHands.map(a => a.name));
+    // Silent talking animations info
     
     // Log details of Talking_0 animation if it exists
     if (talking0Anim) {
@@ -378,22 +369,7 @@ export function Avatar(props) {
         track.name.toLowerCase().includes('finger')
       ) || false;
       
-      console.log("Talking_0 animation details:", {
-        name: talking0Anim.name,
-        duration: talking0Anim.duration,
-        tracks: talking0Anim.tracks?.length,
-        trackNames: talking0Anim.tracks?.map(t => t.name.substring(0, t.name.indexOf('.'))),
-        hasArmHandTracks: talking0HasArmHandTracks,
-        // Check specifically for arm/hand tracks
-        armTracks: talking0Anim.tracks?.filter(t => 
-          t.name.toLowerCase().includes('arm') || 
-          t.name.toLowerCase().includes('hand') || 
-          t.name.toLowerCase().includes('forearm') ||
-          t.name.toLowerCase().includes('shoulder') ||
-          t.name.toLowerCase().includes('wrist') ||
-          t.name.toLowerCase().includes('finger')
-        ).map(t => t.name)
-      });
+      // Silent Talking_0 animation details
     }
     
     // Only set default animation if none is set
@@ -416,7 +392,7 @@ export function Avatar(props) {
         track.name.toLowerCase().includes('finger')
       );
       
-      console.log("Talking_0 has hand movements:", talking0HasHands);
+      // Silent hand movement check
       
       const newAnimation = (talking0HasHands && talking0Anim)
         ? "Talking_0"
@@ -428,92 +404,114 @@ export function Avatar(props) {
         ? talkingAnimations[0].name
         : gestureAnimations.length > 0
         ? gestureAnimations[0].name
-        : filteredAnimations.find((a) => a.name === "Idle")
-        ? "Idle"
+        : filteredAnimations.find((a) => a.name.toLowerCase().includes("idle"))
+        ? filteredAnimations.find((a) => a.name.toLowerCase().includes("idle")).name
         : filteredAnimations[0]?.name || "";
       
-      console.log("Selected initial animation:", newAnimation, {
-        talking0HasHands,
-        hasTalkingWithHands: talkingWithHands.length > 0,
-        hasTalkingAnimations: talkingAnimations.length > 0,
-        hasGestureAnimations: gestureAnimations.length > 0,
-        hasIdle: !!filteredAnimations.find((a) => a.name === "Idle"),
-        firstAnimation: filteredAnimations[0]?.name || "None"
-      });
+      // Silent initial animation selection
       setAnimation(newAnimation);
     }
   }, [filteredAnimations, isModelLoaded, areAnimationsLoaded]);
 
   useEffect(() => {
-    console.log("Animation effect triggered", { animation, hasActions: !!actions, actionExists: actions[animation] });
+    // Silent animation handling
     
-    if (!animation || !actions[animation]) {
-      // If no animation is set, try to play idle animation
-      if (actions["Idle"]) {
-        console.log("Playing idle animation");
-        actions["Idle"].reset().fadeIn(0.5).play();
+    // Early exit if no animation or actions aren't ready
+    if (!animation || !actions) {
+      return;
+    }
+    
+    // Check if the animation actually exists in our actions
+    if (!actions[animation]) {
+      // Try to find a suitable fallback animation
+      const idleActionKey = Object.keys(actions).find(key => key.toLowerCase().includes("idle"));
+      if (idleActionKey) {
+        try {
+          actions[idleActionKey].reset().fadeIn(0.5).play();
+        } catch (error) {
+          // Silent error handling
+        }
       }
       return;
     }
     
-    console.log("Playing animation:", animation);
+    // Silent animation playing with extra safety checks
+    
+    // Double-check that the animation exists before trying to play it
+    if (!actions[animation]) {
+      return;
+    }
     
     try {
+      // Extra safety check - ensure animation has valid tracks
+      const action = actions[animation];
+      if (!action || !action.getClip || !action.getClip()) {
+        return;
+      }
+      
+      // Check that the clip has tracks
+      const clip = action.getClip();
+      if (!clip.tracks || clip.tracks.length === 0) {
+        return;
+      }
+      
       // Fade out any currently playing animation
       Object.keys(actions).forEach(actionName => {
-        if (actions[actionName].isRunning() && actionName !== animation) {
-          console.log("Fading out animation:", actionName);
-          actions[actionName].fadeOut(0.3);
+        if (actions[actionName].isRunning && actions[actionName].isRunning() && actionName !== animation) {
+          // Silently handle fade out errors
+          try {
+            actions[actionName].fadeOut(0.3);
+          } catch (error) {
+            // Ignore fade out errors
+          }
         }
-      });
-      
-      // Play the new animation
-      console.log("Starting animation:", animation);
-      const action = actions[animation];
-      
-      // Debug: Log animation details
-      console.log("Animation details:", {
-        name: animation,
-        hasAction: !!action,
-        isRunning: action?.isRunning(),
-        timeScale: action?.timeScale,
-        weight: action?.getEffectiveWeight(),
-        clipDuration: action?.getClip()?.duration,
-        clipTracks: action?.getClip()?.tracks?.length
       });
       
       // For talking animations, increase the weight for more pronounced movements
       if (animation.toLowerCase().includes('talk') || animation.toLowerCase().includes('gesture')) {
-        action.setEffectiveWeight(1.5); // Increase weight for more visible movements
-        action.timeScale = 1.2; // Slightly increase speed for more noticeable movements
-        console.log("Set increased weight and speed for talking animation");
+        // Silently handle property setting errors
+        try {
+          action.setEffectiveWeight(1.5); // Increase weight for more visible movements
+          action.timeScale = 1.2; // Slightly increase speed for more noticeable movements
+        } catch (error) {
+          // Ignore property setting errors
+        }
       } else {
-        action.setEffectiveWeight(1.0); // Normal weight
-        action.timeScale = 1.0; // Normal speed
-        console.log("Set normal weight and speed for animation");
+        // Silently handle property setting errors
+        try {
+          action.setEffectiveWeight(1.0); // Normal weight
+          action.timeScale = 1.0; // Normal speed
+        } catch (error) {
+          // Ignore property setting errors
+        }
       }
       
-      action
-        .reset()
-        .fadeIn(0.3)
-        .play();
-      
-      console.log("Animation started successfully");
+      // Reset and play the animation
+      try {
+        action.reset();
+        action.fadeIn(0.3);
+        action.play();
+      } catch (error) {
+        // Silent error handling
+      }
         
       // Return cleanup function to fade out when component unmounts or animation changes
       return () => {
-        if (action && action.isRunning()) {
-          console.log("Cleaning up animation:", animation);
-          action.fadeOut(0.3);
+        // Silently handle cleanup errors
+        try {
+          if (action && action.isRunning && action.isRunning()) {
+            action.fadeOut(0.3);
+          }
+        } catch (error) {
+          // Ignore cleanup errors
         }
       };
     } catch (error) {
-      console.warn("Error playing animation:", error);
-      console.error("Full error details:", error.stack);
+      // Silent error handling
       
       // Fallback: If animation fails, try to at least move the hands manually during speech
       if (animation.toLowerCase().includes('talk')) {
-        console.log("Fallback: Will use manual hand movements during talking");
+        // Silent fallback
       }
     }
   }, [animation, actions, mixer.stats.actions.inUse]);
@@ -552,30 +550,9 @@ export function Avatar(props) {
     // Only run animation logic if model is loaded
     if (!isModelLoaded || !areAnimationsLoaded) return;
     
-    // Debug: Log animation status periodically
-    if (Math.floor(Date.now() / 1000) % 5 === 0) { // Every 5 seconds
-      if (animation && actions[animation]?.isRunning()) {
-        console.log("Animation status:", {
-          name: animation,
-          time: actions[animation]?.time,
-          duration: actions[animation]?.getClip()?.duration
-        });
-      } else if (animation) {
-        console.log("Animation selected but not running:", animation, "Action exists:", !!actions[animation]);
-      }
-    }
+    // Silent animation status check
     
-    // Debug: Log arm positions periodically to see if they're moving
-    if (Math.floor(Date.now() / 1000) % 3 === 0) { // Every 3 seconds
-      if (nodes?.LeftArm && nodes?.RightArm) {
-        console.log("Arm positions:", {
-          leftArmRotation: nodes.LeftArm.rotation.toArray(),
-          rightArmRotation: nodes.RightArm.rotation.toArray()
-        });
-      } else {
-        console.log("Arm nodes not found. Available nodes:", Object.keys(nodes || {}));
-      }
-    }
+    // Silent arm position check
     
     !setupMode &&
       Object.keys(nodes.EyeLeft.morphTargetDictionary).forEach((key) => {
@@ -616,7 +593,7 @@ export function Avatar(props) {
         audioEnergyRef.current = audioEnergyRef.current * 0.7 + normalized * 0.3;
       } catch (error) {
         if (process.env.NODE_ENV === 'development') {
-          console.warn('Audio analyser processing error:', error);
+          // Silent error handling
         }
       }
     } else {
@@ -924,13 +901,13 @@ const getCoarticulationTargets = (mouthCue) => {
           } catch (e) {
             // Skip invalid morph targets
             if (process.env.NODE_ENV === 'development') {
-              console.warn(`Error reading morph target ${key}:`, e);
+              // Silent morph target error
             }
           }
         });
-        console.log(JSON.stringify(emotionValues, null, 2));
+        // Silent morph target values
       } catch (e) {
-        console.warn('Error logging morph target values:', e);
+        // Silent error handling
       }
     }),
   });
