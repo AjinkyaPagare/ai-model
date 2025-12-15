@@ -119,7 +119,7 @@ export function Avatar(props) {
   );
 
   const { message, onMessagePlayed, currentAudio, currentAnalyser } = useChat();
-  const [animation, setAnimation] = useState("");
+  const [animation, setAnimation] = useState("Idle"); // Default to Idle animation
 
   // --- Force arms down on initial load ---
   useEffect(() => {
